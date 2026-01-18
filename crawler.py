@@ -13,7 +13,7 @@ def get_all_minutes():
     Supports resume functionality - will skip already scraped entries
     """
     url = "https://www.ratetony.com/minutes"
-    output_file = 'ratetony_scraped_data.json'
+    output_file = 'data/ratetony_scraped_data.json'
 
     print(f"[DEBUG] Starting scraper for {url}")
 
