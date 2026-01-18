@@ -126,7 +126,7 @@ class TrainConfig:
     max_length: int = 1024
 
     # Training hyperparameters
-    batch_size: int = 8
+    batch_size: int = 4  # Reduced for Colab compatibility
     lr: float = 2e-5
     epochs: int = 5
 
@@ -147,8 +147,8 @@ class TrainConfig:
     # Optional overrides
     warmup_steps: int = 0
     weight_decay: float = 0.01
-    gradient_accumulation_steps: int = 1
-    fp16: bool = False  # Mixed precision training
+    gradient_accumulation_steps: int = 4  # Accumulate to effective batch of 16
+    fp16: bool = True  # Mixed precision training for memory savings
 
     def __post_init__(self):
         """Validate configuration"""

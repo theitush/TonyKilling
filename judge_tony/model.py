@@ -122,6 +122,11 @@ def load_model(config: TrainConfig) -> Tuple[RegressionModel, str]:
         trust_remote_code=True,
     )
 
+    # Enable gradient checkpointing for memory efficiency
+    if hasattr(backbone, 'gradient_checkpointing_enable'):
+        backbone.gradient_checkpointing_enable()
+        print("Enabled gradient checkpointing for memory efficiency")
+
     # Apply LoRA if enabled
     if config.use_lora:
         lora_config = LoraConfig(
