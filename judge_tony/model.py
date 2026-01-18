@@ -3,10 +3,19 @@
 import torch
 import torch.nn as nn
 from transformers import AutoModel, AutoConfig, BitsAndBytesConfig
+from transformers.modeling_outputs import ModelOutput
 from peft import LoraConfig, get_peft_model
-from typing import Tuple
+from typing import Tuple, Optional
+from dataclasses import dataclass
 
 from .config import TrainConfig
+
+
+@dataclass
+class RegressionOutput(ModelOutput):
+    """Output class for regression models"""
+    loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
 
 
 class RegressionModel(nn.Module):
@@ -61,14 +70,13 @@ class RegressionModel(nn.Module):
         # Regression head with sigmoid activation
         logits = torch.sigmoid(self.head(hidden)).squeeze(-1)
 
-        output = {"logits": logits}
-
         # Compute loss if labels provided
+        loss = None
         if labels is not None:
             loss_fct = nn.MSELoss()
-            output["loss"] = loss_fct(logits, labels)
+            loss = loss_fct(logits, labels)
 
-        return type('Output', (), output)()  # Create object with attributes
+        return RegressionOutput(loss=loss, logits=logits)
 
 
 def detect_model_type(model_name: str) -> str:
