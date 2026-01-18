@@ -7,7 +7,7 @@ from typing import Tuple, Dict
 from .config import TrainConfig
 from .model import load_model
 from .data import JudgeTonyDataset
-from .trainer import JudgeTonyTrainer, create_training_args
+from .trainer import JudgeTonyTrainer, create_training_args, EpochCheckpointCallback
 from .evaluate import predict, compute_metrics
 
 
@@ -15,6 +15,8 @@ def train(
     config: TrainConfig,
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
+    save_to_drive: bool = True,
+    drive_path: str = "/content/drive/MyDrive/judge_tony_checkpoints",
 ) -> Tuple[object, object, Dict[str, float]]:
     """
     Main training function
@@ -23,6 +25,8 @@ def train(
         config: Training configuration
         train_df: Training DataFrame with 'transcript' and 'score' columns
         test_df: Test DataFrame with 'transcript' and 'score' columns
+        save_to_drive: Whether to save checkpoints to Google Drive (for Colab)
+        drive_path: Path in Google Drive to save checkpoints
 
     Returns:
         Tuple of (model, tokenizer, eval_results)
@@ -65,6 +69,13 @@ def train(
     # Create training arguments
     training_args = create_training_args(config)
 
+    # Create checkpoint callback
+    checkpoint_callback = EpochCheckpointCallback(
+        checkpoint_dir=config.output_dir,
+        save_to_drive=save_to_drive,
+        drive_path=drive_path,
+    )
+
     # Create trainer
     print("\nInitializing trainer...")
     trainer = JudgeTonyTrainer(
@@ -72,6 +83,7 @@ def train(
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        callbacks=[checkpoint_callback],
     )
 
     # Train

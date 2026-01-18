@@ -1,8 +1,8 @@
 """Custom trainer for Judge Tony fine-tuning"""
 
 import torch
-from transformers import Trainer, TrainingArguments
-from typing import Dict
+from transformers import Trainer, TrainingArguments, TrainerCallback
+from typing import Dict, Optional
 import numpy as np
 
 
@@ -40,6 +40,57 @@ class JudgeTonyTrainer(Trainer):
         loss = loss_fct(logits, labels)
 
         return (loss, outputs) if return_outputs else loss
+
+
+class EpochCheckpointCallback(TrainerCallback):
+    """Callback to save checkpoints and eval results at the end of each epoch"""
+
+    def __init__(
+        self,
+        checkpoint_dir: str,
+        save_to_drive: bool = True,
+        drive_path: str = "/content/drive/MyDrive/judge_tony_checkpoints"
+    ):
+        """
+        Args:
+            checkpoint_dir: Local directory to save checkpoints
+            save_to_drive: Whether to copy to Google Drive
+            drive_path: Path in Google Drive for backups
+        """
+        self.checkpoint_dir = checkpoint_dir
+        self.save_to_drive = save_to_drive
+        self.drive_path = drive_path
+
+    def on_epoch_end(self, args, state, control, model=None, **kwargs):
+        """Called at the end of each epoch"""
+        from .colab_utils import save_checkpoint
+
+        # Get current epoch (state.epoch is 1-indexed during training)
+        epoch = int(state.epoch)
+
+        # Get eval metrics from the latest log
+        eval_results = {}
+        if state.log_history:
+            # Find the most recent eval metrics
+            for log in reversed(state.log_history):
+                if 'eval_loss' in log:
+                    eval_results = {
+                        'epoch': epoch,
+                        'eval_loss': log.get('eval_loss'),
+                        'eval_runtime': log.get('eval_runtime'),
+                        'eval_samples_per_second': log.get('eval_samples_per_second'),
+                    }
+                    break
+
+        # Save checkpoint
+        save_checkpoint(
+            model=model,
+            eval_results=eval_results,
+            epoch=epoch,
+            checkpoint_dir=self.checkpoint_dir,
+            save_to_drive=self.save_to_drive,
+            drive_path=self.drive_path
+        )
 
 
 def create_training_args(config) -> TrainingArguments:
