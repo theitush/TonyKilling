@@ -32,6 +32,9 @@ class JudgeTonyTrainer(Trainer):
         # Get predictions (already passed through sigmoid in model)
         logits = outputs.logits
 
+        # Ensure labels match logits dtype for fp16 training
+        labels = labels.to(logits.dtype)
+
         # Compute MSE loss
         loss_fct = torch.nn.MSELoss()
         loss = loss_fct(logits, labels)

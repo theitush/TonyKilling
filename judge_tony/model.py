@@ -144,9 +144,4 @@ def load_model(config: TrainConfig) -> Tuple[RegressionModel, str]:
     # Wrap in regression model
     model = RegressionModel(backbone, hidden_size, model_type)
 
-    # If using fp16, convert the regression head to float16
-    if config.fp16 and not config.use_lora:
-        model.head = model.head.half()
-        print("Converted regression head to float16 for fp16 training")
-
     return model, model_type
