@@ -63,8 +63,8 @@ def create_training_args(config) -> TrainingArguments:
         logging_steps=config.logging_steps,
         logging_strategy="steps",
         # Evaluation
-        eval_strategy="steps",
-        eval_steps=config.eval_steps,
+        eval_strategy=config.save_strategy,
+        eval_steps=config.eval_steps if config.save_strategy == "steps" else None,
         # Saving
         save_strategy=config.save_strategy,
         save_steps=config.eval_steps if config.save_strategy == "steps" else None,
