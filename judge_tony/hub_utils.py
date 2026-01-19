@@ -253,6 +253,7 @@ def upload_checkpoint_to_hub(
             revision=epoch_branch,
             commit_message=commit_message,
             create_pr=False,
+            allow_patterns=["config.json", "model.safetensors", "generation_config.json", "README.md", "eval_results.json"],
         )
 
         print(f"✓ Uploaded to https://huggingface.co/{repo_name}/tree/{epoch_branch}")
@@ -268,6 +269,7 @@ def upload_checkpoint_to_hub(
                     revision="main",
                     commit_message=commit_message,
                     create_pr=False,
+                    allow_patterns=["config.json", "model.safetensors", "generation_config.json", "README.md", "eval_results.json"],
                 )
                 print(f"✓ Updated main branch: https://huggingface.co/{repo_name}")
             except Exception as e:
