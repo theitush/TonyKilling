@@ -76,34 +76,42 @@ class EpochCheckpointCallback(TrainerCallback):
         self.best_eval_loss = float('inf')
         self.best_epoch = None
 
-    def _create_qq_plot(self, predictions: np.ndarray, actuals: np.ndarray, title: str):
+    def _create_qq_plots(self, train_preds: np.ndarray, train_actuals: np.ndarray,
+                        val_preds: np.ndarray, val_actuals: np.ndarray, epoch: int):
         """
-        Create a QQ plot comparing predictions vs actual scores
+        Create side-by-side QQ plots comparing predictions vs actual scores
 
         Args:
-            predictions: Array of predicted scores
-            actuals: Array of actual scores
-            title: Plot title
+            train_preds: Array of training predicted scores
+            train_actuals: Array of training actual scores
+            val_preds: Array of validation predicted scores
+            val_actuals: Array of validation actual scores
+            epoch: Current epoch number
         """
         # normalize predictions to score range [-0.5, 1.5] for better visualization
-        predictions = np.array([max(-0.5, p) for p in predictions])
-        predictions = np.array([min(1.5, p) for p in predictions])
+        train_preds = np.array([max(-0.5, min(1.5, p)) for p in train_preds])
+        val_preds = np.array([max(-0.5, min(1.5, p)) for p in val_preds])
 
-        plt.figure(figsize=(8, 8))
-        
-        # Create scatter plot
-        sns.scatterplot(x=predictions, y=actuals, alpha=0.5)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 
-        # Add diagonal reference line (perfect predictions)
-        min_val = min(predictions.min(), actuals.min())
-        max_val = max(predictions.max(), actuals.max())
-        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Perfect prediction')
+        # Training set plot
+        sns.scatterplot(x=train_preds, y=train_actuals, alpha=0.5, ax=ax1)
+        ax1.plot([0, 1], [0, 1], 'r--', label='Perfect prediction')
+        ax1.set_xlabel('Predicted Score')
+        ax1.set_ylabel('Actual Score')
+        ax1.set_title(f'Epoch {epoch} - Training Set: Predictions vs Actual Scores')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
 
-        plt.xlabel('Predicted Score')
-        plt.ylabel('Actual Score')
-        plt.title(title)
-        plt.legend()
-        plt.grid(True, alpha=0.3)
+        # Validation set plot
+        sns.scatterplot(x=val_preds, y=val_actuals, alpha=0.5, ax=ax2)
+        ax2.plot([0, 1], [0, 1], 'r--', label='Perfect prediction')
+        ax2.set_xlabel('Predicted Score')
+        ax2.set_ylabel('Actual Score')
+        ax2.set_title(f'Epoch {epoch} - Validation Set: Predictions vs Actual Scores')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
         plt.tight_layout()
         plt.show()
 
@@ -142,23 +150,21 @@ class EpochCheckpointCallback(TrainerCallback):
         if self.trainer:
             print(f"\n📊 Generating QQ plots for epoch {epoch}...")
 
-            # Get train dataset predictions
+            # Get train and validation dataset predictions
+            train_preds, train_actuals = None, None
+            val_preds, val_actuals = None, None
+
             if hasattr(self.trainer, 'train_dataset') and self.trainer.train_dataset is not None:
                 train_preds, train_actuals = self._get_predictions(self.trainer, self.trainer.train_dataset)
-                self._create_qq_plot(
-                    train_preds,
-                    train_actuals,
-                    f'Epoch {epoch} - Training Set: Predictions vs Actual Scores'
-                )
 
-            # Get validation dataset predictions
             if hasattr(self.trainer, 'eval_dataset') and self.trainer.eval_dataset is not None:
                 val_preds, val_actuals = self._get_predictions(self.trainer, self.trainer.eval_dataset)
-                self._create_qq_plot(
-                    val_preds,
-                    val_actuals,
-                    f'Epoch {epoch} - Validation Set: Predictions vs Actual Scores'
-                )
+
+            # Create side-by-side plots if both datasets are available
+            if train_preds is not None and val_preds is not None:
+                self._create_qq_plots(train_preds, train_actuals, val_preds, val_actuals, epoch)
+            else:
+                print("⚠️ Both train and validation datasets needed for QQ plots.")
         else:
             print("⚠️ Trainer instance not available; skipping QQ plots.")
 
