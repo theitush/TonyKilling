@@ -43,7 +43,7 @@ class JudgeTonyTrainer(Trainer):
 
 
 class EpochCheckpointCallback(TrainerCallback):
-    """Callback to save checkpoints and upload to HuggingFace Hub at the end of each epoch"""
+    """Callback to save checkpoints and upload to HuggingFace Hub after evaluation"""
 
     def __init__(
         self,
@@ -66,27 +66,25 @@ class EpochCheckpointCallback(TrainerCallback):
         self.best_eval_loss = float('inf')
         self.best_epoch = None
 
-    def on_epoch_end(self, args, state, control, model=None, **kwargs):
-        """Called at the end of each epoch"""
+    def on_evaluate(self, args, state, control, model=None, metrics=None, **kwargs):
+        """Called after evaluation completes - this ensures we have current epoch's metrics"""
         from .colab_utils import save_checkpoint
         from .hub_utils import upload_checkpoint_to_hub
 
-        # Get current epoch (state.epoch is 1-indexed during training)
+        # Only save/upload at epoch boundaries (when eval_strategy="epoch")
+        # state.epoch is the current epoch (e.g., 1.0, 2.0, 3.0)
+        if not state.epoch.is_integer():
+            return
+
         epoch = int(state.epoch)
 
-        # Get eval metrics from the latest log
-        eval_results = {}
-        if state.log_history:
-            # Find the most recent eval metrics
-            for log in reversed(state.log_history):
-                if 'eval_loss' in log:
-                    eval_results = {
-                        'epoch': epoch,
-                        'eval_loss': log.get('eval_loss'),
-                        'eval_runtime': log.get('eval_runtime'),
-                        'eval_samples_per_second': log.get('eval_samples_per_second'),
-                    }
-                    break
+        # Build eval results from the metrics passed to this callback
+        eval_results = {
+            'epoch': epoch,
+            'eval_loss': metrics.get('eval_loss'),
+            'eval_runtime': metrics.get('eval_runtime'),
+            'eval_samples_per_second': metrics.get('eval_samples_per_second'),
+        }
 
         # Save checkpoint locally
         checkpoint_path = save_checkpoint(
