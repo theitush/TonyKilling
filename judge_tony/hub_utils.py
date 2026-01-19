@@ -235,6 +235,17 @@ def upload_checkpoint_to_hub(
         epoch_branch = f"epoch-{epoch}"
         print(f"⬆️  Uploading checkpoint to {repo_name} (branch: {epoch_branch})...")
 
+        # Create branch from main if it doesn't exist
+        try:
+            api.create_branch(
+                repo_id=repo_name,
+                branch=epoch_branch,
+                repo_type="model",
+                exist_ok=True,
+            )
+        except Exception as e:
+            print(f"Note: Branch creation info: {e}")
+
         api.upload_folder(
             folder_path=checkpoint_dir,
             repo_id=repo_name,
