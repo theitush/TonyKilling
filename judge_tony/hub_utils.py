@@ -57,34 +57,14 @@ def get_repo_name(base_model_name: str, hf_username: str, repo_prefix: str = "ju
         repo_prefix: Prefix for repo name
 
     Returns:
-        Full repo name (e.g., "username/judge-tony-qwen")
+        Full repo name (e.g., "username/judge-tony-qwen2.5-0.5b")
     """
-    # Extract model family from full name
-    # E.g., "Qwen/Qwen2.5-0.5B" -> "qwen"
-    # E.g., "meta-llama/Llama-2-7b" -> "llama"
-    # E.g., "answerdotai/ModernBERT-base" -> "modernbert"
+    # Extract model name from path and use it directly
+    # E.g., "Qwen/Qwen2.5-0.5B" -> "qwen2.5-0.5b"
+    # E.g., "meta-llama/Llama-2-7b" -> "llama-2-7b"
+    model_name = base_model_name.split("/")[-1].lower()
 
-    model_family = base_model_name.split("/")[-1].lower()
-
-    # Extract key identifier
-    if "qwen" in model_family:
-        family = "qwen"
-    elif "llama" in model_family:
-        family = "llama"
-    elif "phi" in model_family:
-        family = "phi"
-    elif "gemma" in model_family:
-        family = "gemma"
-    elif "bert" in model_family:
-        if "modern" in model_family:
-            family = "modernbert"
-        else:
-            family = "bert"
-    else:
-        # Use first part of model name
-        family = model_family.split("-")[0]
-
-    repo_name = f"{hf_username}/{repo_prefix}-{family}"
+    repo_name = f"{hf_username}/{repo_prefix}-{model_name}"
     return repo_name
 
 
@@ -238,21 +218,16 @@ def upload_checkpoint_to_hub(
         with open(results_path, "w") as f:
             json.dump(eval_results, f, indent=2)
 
-        # Determine revision (branch/tag)
-        if is_best:
-            revision = "main"
-            tag = f"best-epoch-{epoch}"
-        else:
-            revision = f"epoch-{epoch}"
-            tag = None
-
-        # Create commit message
+        # Determine revision (branch/tag) and commit message
         if commit_message is None:
             eval_loss = eval_results.get("eval_loss", "N/A")
             commit_message = f"Upload epoch {epoch} checkpoint (eval_loss: {eval_loss})"
+            if is_best:
+                commit_message = f"✨ Best checkpoint - " + commit_message
 
-        # Upload to Hub
-        print(f"⬆️  Uploading checkpoint to {repo_name} (revision: {revision})...")
+        # Upload to main branch
+        revision = "main"
+        print(f"⬆️  Uploading checkpoint to {repo_name}...")
 
         api.upload_folder(
             folder_path=checkpoint_dir,
@@ -263,21 +238,41 @@ def upload_checkpoint_to_hub(
             create_pr=False,
         )
 
-        print(f"✓ Uploaded to https://huggingface.co/{repo_name}/tree/{revision}")
+        print(f"✓ Uploaded to https://huggingface.co/{repo_name}")
 
-        # Create tag if this is the best checkpoint
-        if tag:
+        # Create tag for this epoch
+        tag = f"epoch-{epoch}"
+        try:
+            api.create_tag(
+                repo_id=repo_name,
+                repo_type="model",
+                tag=tag,
+                revision=revision,
+                tag_message=f"Checkpoint at epoch {epoch} (eval_loss: {eval_results.get('eval_loss', 'N/A')})",
+            )
+            print(f"✓ Created tag: {tag}")
+        except Exception as e:
+            print(f"Note: Could not create tag (may already exist): {e}")
+
+        # Also create/update best tag if this is the best checkpoint
+        if is_best:
             try:
+                # Delete old best tag if it exists
+                try:
+                    api.delete_tag(repo_id=repo_name, repo_type="model", tag="best")
+                except:
+                    pass  # Tag may not exist yet
+
                 api.create_tag(
                     repo_id=repo_name,
                     repo_type="model",
-                    tag=tag,
+                    tag="best",
                     revision=revision,
                     tag_message=f"Best checkpoint at epoch {epoch}",
                 )
-                print(f"✓ Created tag: {tag}")
+                print(f"✓ Created/updated 'best' tag")
             except Exception as e:
-                print(f"Note: Could not create tag (may already exist): {e}")
+                print(f"Note: Could not create best tag: {e}")
 
         return True
 
