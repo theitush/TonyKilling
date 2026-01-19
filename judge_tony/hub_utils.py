@@ -172,7 +172,17 @@ def upload_checkpoint_to_hub(
     commit_message: Optional[str] = None,
 ) -> bool:
     """
-    Upload checkpoint to HuggingFace Hub
+    Upload checkpoint to HuggingFace Hub with branch-based versioning
+
+    Each epoch is uploaded to its own branch (epoch-1, epoch-2, etc.) to preserve
+    all checkpoint versions. The main branch is updated only with the best checkpoint.
+
+    Usage examples:
+        # Load latest/best checkpoint (from main branch)
+        model = AutoModel.from_pretrained("username/judge-tony-qwen")
+
+        # Load specific epoch checkpoint
+        model = AutoModel.from_pretrained("username/judge-tony-qwen", revision="epoch-3")
 
     Args:
         checkpoint_dir: Local directory containing checkpoint files
@@ -180,7 +190,7 @@ def upload_checkpoint_to_hub(
         epoch: Epoch number
         eval_results: Evaluation results dictionary
         base_model_name: Base model name
-        is_best: Whether this is the best checkpoint
+        is_best: Whether this is the best checkpoint (will also update main branch)
         commit_message: Custom commit message (optional)
 
     Returns:
@@ -221,54 +231,36 @@ def upload_checkpoint_to_hub(
             if is_best:
                 commit_message = f"✨ Best checkpoint - " + commit_message
 
-        # Upload to main branch
-        revision = "main"
-        print(f"⬆️  Uploading checkpoint to {repo_name}...")
+        # Upload to epoch-specific branch to preserve all checkpoints
+        epoch_branch = f"epoch-{epoch}"
+        print(f"⬆️  Uploading checkpoint to {repo_name} (branch: {epoch_branch})...")
 
         api.upload_folder(
             folder_path=checkpoint_dir,
             repo_id=repo_name,
             repo_type="model",
-            revision=revision,
+            revision=epoch_branch,
             commit_message=commit_message,
             create_pr=False,
         )
 
-        print(f"✓ Uploaded to https://huggingface.co/{repo_name}")
+        print(f"✓ Uploaded to https://huggingface.co/{repo_name}/tree/{epoch_branch}")
 
-        # Create tag for this epoch
-        tag = f"epoch-{epoch}"
-        try:
-            api.create_tag(
-                repo_id=repo_name,
-                repo_type="model",
-                tag=tag,
-                revision=revision,
-                tag_message=f"Checkpoint at epoch {epoch} (eval_loss: {eval_results.get('eval_loss', 'N/A')})",
-            )
-            print(f"✓ Created tag: {tag}")
-        except Exception as e:
-            print(f"Note: Could not create tag (may already exist): {e}")
-
-        # Also create/update best tag if this is the best checkpoint
+        # Also upload to main branch if this is the best checkpoint
         if is_best:
+            print(f"⬆️  Updating main branch with best checkpoint...")
             try:
-                # Delete old best tag if it exists
-                try:
-                    api.delete_tag(repo_id=repo_name, repo_type="model", tag="best")
-                except:
-                    pass  # Tag may not exist yet
-
-                api.create_tag(
+                api.upload_folder(
+                    folder_path=checkpoint_dir,
                     repo_id=repo_name,
                     repo_type="model",
-                    tag="best",
-                    revision=revision,
-                    tag_message=f"Best checkpoint at epoch {epoch}",
+                    revision="main",
+                    commit_message=commit_message,
+                    create_pr=False,
                 )
-                print(f"✓ Created/updated 'best' tag")
+                print(f"✓ Updated main branch: https://huggingface.co/{repo_name}")
             except Exception as e:
-                print(f"Note: Could not create best tag: {e}")
+                print(f"Note: Could not update main branch: {e}")
 
         return True
 
