@@ -181,10 +181,13 @@ def load_model(config: TrainConfig) -> Tuple[RegressionModel, str]:
         print(f"Using {config.quantization_bits}-bit quantization with LoRA")
 
     # Load backbone
+    # Note: Using device_map=None to let Trainer handle device placement
+    # This works for both single-GPU and multi-GPU training (DataParallel/DDP)
+    # device_map="auto" only works for inference or single-device scenarios
     backbone = AutoModel.from_pretrained(
         config.model_name,
         quantization_config=quantization_config,
-        device_map="auto" if config.use_lora else None,
+        device_map=None,
         trust_remote_code=True,
     )
 
