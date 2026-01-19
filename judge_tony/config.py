@@ -154,6 +154,7 @@ class TrainConfig:
     weight_decay: float = 0.01
     gradient_accumulation_steps: int = 4  # Accumulate to effective batch of 16
     fp16: bool = True  # Mixed precision training for memory savings
+    force_single_gpu: bool = False  # Force single GPU usage (useful for Kaggle/multi-GPU environments)
 
     def __post_init__(self):
         """Validate configuration"""

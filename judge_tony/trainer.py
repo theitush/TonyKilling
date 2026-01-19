@@ -222,6 +222,13 @@ def create_training_args(config) -> TrainingArguments:
     Returns:
         TrainingArguments for HuggingFace Trainer
     """
+    import os
+
+    # Force single GPU if configured
+    if hasattr(config, 'force_single_gpu') and config.force_single_gpu:
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        print("🔧 Forcing single GPU usage (CUDA_VISIBLE_DEVICES=0)")
+
     return TrainingArguments(
         output_dir=config.output_dir,
         num_train_epochs=config.epochs,
