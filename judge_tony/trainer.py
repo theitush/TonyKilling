@@ -157,7 +157,8 @@ class EpochCheckpointCallback(TrainerCallback):
                     val_actuals,
                     f'Epoch {epoch} - Validation Set: Predictions vs Actual Scores'
                 )
-
+        else:
+            print("⚠️ Trainer instance not available; skipping QQ plots.")
         # Build eval results from the metrics passed to this callback
         eval_results = {
             'epoch': epoch,
