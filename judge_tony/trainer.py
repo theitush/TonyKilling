@@ -9,6 +9,11 @@ import numpy as np
 class JudgeTonyTrainer(Trainer):
     """Custom trainer with MSE loss for regression"""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Store loss function for logging
+        self.loss_fct = torch.nn.MSELoss()
+
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         """
         Custom loss computation using MSE
@@ -36,8 +41,7 @@ class JudgeTonyTrainer(Trainer):
         labels = labels.to(logits.dtype)
 
         # Compute MSE loss
-        loss_fct = torch.nn.MSELoss()
-        loss = loss_fct(logits, labels)
+        loss = self.loss_fct(logits, labels)
 
         return (loss, outputs) if return_outputs else loss
 
@@ -78,9 +82,15 @@ class EpochCheckpointCallback(TrainerCallback):
 
         epoch = int(state.epoch)
 
+        # Get trainer instance to access loss function
+        trainer = kwargs.get('trainer')
+        loss_function = str(trainer.loss_fct) if trainer and hasattr(trainer, 'loss_fct') else None
+
         # Build eval results from the metrics passed to this callback
         eval_results = {
             'epoch': epoch,
+            'loss_function': loss_function,
+            'train_loss': metrics.get('loss'),
             'eval_loss': metrics.get('eval_loss'),
             'eval_runtime': metrics.get('eval_runtime'),
             'eval_samples_per_second': metrics.get('eval_samples_per_second'),
