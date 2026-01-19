@@ -58,6 +58,7 @@ class EpochCheckpointCallback(TrainerCallback):
         hf_repo_name: Optional[str] = None,
         base_model_name: Optional[str] = None,
         upload_to_hub: bool = True,
+        trainer: Optional['JudgeTonyTrainer'] = None,
     ):
         """
         Args:
@@ -65,11 +66,13 @@ class EpochCheckpointCallback(TrainerCallback):
             hf_repo_name: HuggingFace repository name (e.g., "username/judge-tony-qwen")
             base_model_name: Base model name for model card generation
             upload_to_hub: Whether to upload to HuggingFace Hub
+            trainer: Reference to the trainer instance (for accessing loss function)
         """
         self.checkpoint_dir = checkpoint_dir
         self.hf_repo_name = hf_repo_name
         self.base_model_name = base_model_name
         self.upload_to_hub = upload_to_hub
+        self.trainer = trainer
         self.best_eval_loss = float('inf')
         self.best_epoch = None
 
@@ -132,17 +135,16 @@ class EpochCheckpointCallback(TrainerCallback):
 
         epoch = int(state.epoch)
 
-        # Get trainer instance to access loss function and datasets
-        trainer = kwargs.get('trainer')
-        loss_function = str(trainer.loss_fct) if trainer and hasattr(trainer, 'loss_fct') else None
+        # Get loss function from stored trainer reference
+        loss_function = str(self.trainer.loss_fct) if self.trainer and hasattr(self.trainer, 'loss_fct') else None
 
         # Generate QQ plots for train and validation sets
-        if trainer:
+        if self.trainer:
             print(f"\n📊 Generating QQ plots for epoch {epoch}...")
 
             # Get train dataset predictions
-            if hasattr(trainer, 'train_dataset') and trainer.train_dataset is not None:
-                train_preds, train_actuals = self._get_predictions(trainer, trainer.train_dataset)
+            if hasattr(self.trainer, 'train_dataset') and self.trainer.train_dataset is not None:
+                train_preds, train_actuals = self._get_predictions(self.trainer, self.trainer.train_dataset)
                 self._create_qq_plot(
                     train_preds,
                     train_actuals,
@@ -150,8 +152,8 @@ class EpochCheckpointCallback(TrainerCallback):
                 )
 
             # Get validation dataset predictions
-            if hasattr(trainer, 'eval_dataset') and trainer.eval_dataset is not None:
-                val_preds, val_actuals = self._get_predictions(trainer, trainer.eval_dataset)
+            if hasattr(self.trainer, 'eval_dataset') and self.trainer.eval_dataset is not None:
+                val_preds, val_actuals = self._get_predictions(self.trainer, self.trainer.eval_dataset)
                 self._create_qq_plot(
                     val_preds,
                     val_actuals,
@@ -159,11 +161,19 @@ class EpochCheckpointCallback(TrainerCallback):
                 )
         else:
             print("⚠️ Trainer instance not available; skipping QQ plots.")
+
+        # Get train_loss from state.log_history (most recent entry with 'loss' key for current epoch)
+        train_loss = None
+        for log_entry in reversed(state.log_history):
+            if 'loss' in log_entry and log_entry.get('epoch', 0) <= epoch:
+                train_loss = log_entry['loss']
+                break
+
         # Build eval results from the metrics passed to this callback
         eval_results = {
             'epoch': epoch,
             'loss_function': loss_function,
-            'train_loss': metrics.get('loss'),
+            'train_loss': train_loss,
             'eval_loss': metrics.get('eval_loss'),
             'eval_runtime': metrics.get('eval_runtime'),
             'eval_samples_per_second': metrics.get('eval_samples_per_second'),

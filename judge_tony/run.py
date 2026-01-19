@@ -109,6 +109,9 @@ def train(
         callbacks=[checkpoint_callback],
     )
 
+    # Set trainer reference in callback for accessing loss function
+    checkpoint_callback.trainer = trainer
+
     # Train
     print("\nStarting training...")
     print("=" * 50)
