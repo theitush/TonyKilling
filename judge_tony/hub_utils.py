@@ -19,12 +19,8 @@ def setup_hf_auth(token: Optional[str] = None) -> Optional[str]:
     Returns:
         HuggingFace username if authenticated, None otherwise
     """
-    # Try to get token from argument or environment
-    if token is None:
-        token = os.environ.get("HF_TOKEN")
-
-    # If token provided, login
-    if token:
+    # If token explicitly provided (not from env var), use it to login
+    if token is not None:
         try:
             login(token=token, add_to_git_credential=False)
             print("✓ Logged in to HuggingFace Hub with provided token")
@@ -32,7 +28,7 @@ def setup_hf_auth(token: Optional[str] = None) -> Optional[str]:
             print(f"Warning: Could not login with provided token: {e}")
             return None
 
-    # Try to get current user
+    # Try to get current user (will use HF_TOKEN env var automatically if set)
     try:
         user_info = whoami()
         username = user_info.get("name")
@@ -150,7 +146,7 @@ If you use this model, please cite:
 
 ```bibtex
 @misc{{judge-tony,
-  author = {{Your Name}},
+  author = {{itacas}},
   title = {{Judge Tony: Comedy Rating Model}},
   year = {{2025}},
   publisher = {{HuggingFace}},
