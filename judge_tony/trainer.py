@@ -43,27 +43,33 @@ class JudgeTonyTrainer(Trainer):
 
 
 class EpochCheckpointCallback(TrainerCallback):
-    """Callback to save checkpoints and eval results at the end of each epoch"""
+    """Callback to save checkpoints and upload to HuggingFace Hub at the end of each epoch"""
 
     def __init__(
         self,
         checkpoint_dir: str,
-        save_to_drive: bool = True,
-        drive_path: str = "/content/drive/MyDrive/judge_tony_checkpoints"
+        hf_repo_name: Optional[str] = None,
+        base_model_name: Optional[str] = None,
+        upload_to_hub: bool = True,
     ):
         """
         Args:
             checkpoint_dir: Local directory to save checkpoints
-            save_to_drive: Whether to copy to Google Drive
-            drive_path: Path in Google Drive for backups
+            hf_repo_name: HuggingFace repository name (e.g., "username/judge-tony-qwen")
+            base_model_name: Base model name for model card generation
+            upload_to_hub: Whether to upload to HuggingFace Hub
         """
         self.checkpoint_dir = checkpoint_dir
-        self.save_to_drive = save_to_drive
-        self.drive_path = drive_path
+        self.hf_repo_name = hf_repo_name
+        self.base_model_name = base_model_name
+        self.upload_to_hub = upload_to_hub
+        self.best_eval_loss = float('inf')
+        self.best_epoch = None
 
     def on_epoch_end(self, args, state, control, model=None, **kwargs):
         """Called at the end of each epoch"""
         from .colab_utils import save_checkpoint
+        from .hub_utils import upload_checkpoint_to_hub
 
         # Get current epoch (state.epoch is 1-indexed during training)
         epoch = int(state.epoch)
@@ -82,15 +88,32 @@ class EpochCheckpointCallback(TrainerCallback):
                     }
                     break
 
-        # Save checkpoint
-        save_checkpoint(
+        # Save checkpoint locally
+        checkpoint_path = save_checkpoint(
             model=model,
             eval_results=eval_results,
             epoch=epoch,
             checkpoint_dir=self.checkpoint_dir,
-            save_to_drive=self.save_to_drive,
-            drive_path=self.drive_path
         )
+
+        # Track best checkpoint
+        current_loss = eval_results.get('eval_loss', float('inf'))
+        is_best = current_loss < self.best_eval_loss
+        if is_best:
+            self.best_eval_loss = current_loss
+            self.best_epoch = epoch
+            print(f"🏆 New best checkpoint! Loss: {current_loss:.4f}")
+
+        # Upload to HuggingFace Hub
+        if self.upload_to_hub and self.hf_repo_name and self.base_model_name:
+            upload_checkpoint_to_hub(
+                checkpoint_dir=checkpoint_path,
+                repo_name=self.hf_repo_name,
+                epoch=epoch,
+                eval_results=eval_results,
+                base_model_name=self.base_model_name,
+                is_best=is_best,
+            )
 
 
 def create_training_args(config) -> TrainingArguments:

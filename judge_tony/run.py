@@ -15,8 +15,6 @@ def train(
     config: TrainConfig,
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
-    save_to_drive: bool = True,
-    drive_path: str = "/content/drive/MyDrive/judge_tony_checkpoints",
 ) -> Tuple[object, object, Dict[str, float]]:
     """
     Main training function
@@ -25,8 +23,6 @@ def train(
         config: Training configuration
         train_df: Training DataFrame with 'transcript' and 'score' columns
         test_df: Test DataFrame with 'transcript' and 'score' columns
-        save_to_drive: Whether to save checkpoints to Google Drive (for Colab)
-        drive_path: Path in Google Drive to save checkpoints
 
     Returns:
         Tuple of (model, tokenizer, eval_results)
@@ -34,6 +30,8 @@ def train(
         - tokenizer: HuggingFace tokenizer
         - eval_results: Dict with test set metrics (mse, mae)
     """
+    from .hub_utils import setup_hf_auth, get_repo_name
+
     print("=" * 50)
     print("Judge Tony Training Pipeline")
     print("=" * 50)
@@ -45,7 +43,31 @@ def train(
     print(f"Learning rate: {config.lr}")
     print(f"Epochs: {config.epochs}")
     print(f"LoRA: {config.use_lora}")
+    print(f"Upload to Hub: {config.upload_to_hub}")
     print("=" * 50)
+
+    # Setup HuggingFace authentication
+    hf_username = None
+    hf_repo_name = None
+    if config.upload_to_hub:
+        print("\nSetting up HuggingFace Hub authentication...")
+        hf_username = setup_hf_auth()
+
+        # Use configured username or auto-detected one
+        if config.hf_username:
+            hf_username = config.hf_username
+
+        if hf_username:
+            hf_repo_name = get_repo_name(
+                base_model_name=config.model_name,
+                hf_username=hf_username,
+                repo_prefix=config.hf_repo_prefix,
+            )
+            print(f"Will upload to: {hf_repo_name}")
+        else:
+            print("Warning: HuggingFace authentication failed. Checkpoints will only be saved locally.")
+            config.upload_to_hub = False
+        print("=" * 50)
 
     # Load tokenizer
     print("\nLoading tokenizer...")
@@ -72,8 +94,9 @@ def train(
     # Create checkpoint callback
     checkpoint_callback = EpochCheckpointCallback(
         checkpoint_dir=config.output_dir,
-        save_to_drive=save_to_drive,
-        drive_path=drive_path,
+        hf_repo_name=hf_repo_name,
+        base_model_name=config.model_name,
+        upload_to_hub=config.upload_to_hub,
     )
 
     # Create trainer
@@ -113,9 +136,41 @@ def train(
     print("=" * 50)
 
     # Save model and tokenizer
-    print(f"\nSaving model to {config.output_dir}...")
+    print(f"\nSaving final model to {config.output_dir}...")
     model.save_pretrained(config.output_dir)
     tokenizer.save_pretrained(config.output_dir)
+
+    # Upload final best model to HuggingFace Hub main branch
+    if config.upload_to_hub and hf_repo_name and checkpoint_callback.best_epoch is not None:
+        from .hub_utils import upload_checkpoint_to_hub
+        import json
+        import os
+
+        print(f"\nUploading best model (epoch {checkpoint_callback.best_epoch}) to HuggingFace Hub...")
+
+        # Create eval results for final upload
+        final_eval_results = {
+            'test_mse': eval_results['mse'],
+            'test_mae': eval_results['mae'],
+            'best_epoch': checkpoint_callback.best_epoch,
+            'best_eval_loss': checkpoint_callback.best_eval_loss,
+        }
+
+        # Save final results
+        final_results_path = os.path.join(config.output_dir, "eval_results.json")
+        with open(final_results_path, 'w') as f:
+            json.dump(final_eval_results, f, indent=2)
+
+        # Upload to main branch
+        upload_checkpoint_to_hub(
+            checkpoint_dir=config.output_dir,
+            repo_name=hf_repo_name,
+            epoch=checkpoint_callback.best_epoch,
+            eval_results=final_eval_results,
+            base_model_name=config.model_name,
+            is_best=True,  # This will upload to main branch
+            commit_message=f"Final best model from epoch {checkpoint_callback.best_epoch}",
+        )
 
     print("\nTraining complete!")
 

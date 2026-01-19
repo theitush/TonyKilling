@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from transformers import AutoModel, AutoConfig, BitsAndBytesConfig
+from transformers import AutoModel, AutoConfig, BitsAndBytesConfig, PreTrainedModel, PretrainedConfig
 from transformers.modeling_outputs import ModelOutput
 from peft import LoraConfig, get_peft_model
 from typing import Tuple, Optional
@@ -18,23 +18,70 @@ class RegressionOutput(ModelOutput):
     logits: torch.FloatTensor = None
 
 
-class RegressionModel(nn.Module):
-    """Wrapper model for comedy score regression"""
+class RegressionModelConfig(PretrainedConfig):
+    """Configuration class for RegressionModel"""
 
-    def __init__(self, backbone: nn.Module, hidden_size: int, model_type: str):
+    model_type = "regression_model"
+
+    def __init__(
+        self,
+        base_model_name: str = "answerdotai/ModernBERT-base",
+        model_type_detected: str = "encoder",
+        hidden_size: int = 768,
+        use_lora: bool = False,
+        lora_r: int = 8,
+        lora_alpha: int = 16,
+        quantization_bits: int = 4,
+        **kwargs
+    ):
         """
         Args:
-            backbone: Pre-trained transformer model
-            hidden_size: Hidden dimension of the backbone
-            model_type: "encoder" or "decoder"
+            base_model_name: HuggingFace model name to use as backbone
+            model_type_detected: "encoder" or "decoder" based on architecture
+            hidden_size: Hidden dimension of the backbone model
+            use_lora: Whether LoRA was used during training
+            lora_r: LoRA rank
+            lora_alpha: LoRA alpha parameter
+            quantization_bits: Bits for quantization (4 or 8)
+            **kwargs: Additional arguments passed to PretrainedConfig
         """
-        super().__init__()
-        self.backbone = backbone
-        self.head = nn.Linear(hidden_size, 1)
-        self.model_type = model_type
+        super().__init__(**kwargs)
+        self.base_model_name = base_model_name
+        self.model_type_detected = model_type_detected
+        self.hidden_size = hidden_size
+        self.use_lora = use_lora
+        self.lora_r = lora_r
+        self.lora_alpha = lora_alpha
+        self.quantization_bits = quantization_bits
 
-        if model_type not in ["encoder", "decoder"]:
-            raise ValueError(f"model_type must be 'encoder' or 'decoder', got {model_type}")
+
+class RegressionModel(PreTrainedModel):
+    """Wrapper model for comedy score regression"""
+
+    config_class = RegressionModelConfig
+
+    def __init__(self, config: RegressionModelConfig, backbone: nn.Module = None):
+        """
+        Args:
+            config: RegressionModelConfig with model settings
+            backbone: Pre-trained transformer model (optional, for compatibility)
+        """
+        super().__init__(config)
+        self.config = config
+
+        # If backbone is provided, use it (for backward compatibility)
+        # Otherwise, we expect it to be loaded from pretrained
+        if backbone is not None:
+            self.backbone = backbone
+        else:
+            # This will be set when loading from pretrained
+            self.backbone = None
+
+        self.head = nn.Linear(config.hidden_size, 1)
+        self.model_type_str = config.model_type_detected
+
+        if config.model_type_detected not in ["encoder", "decoder"]:
+            raise ValueError(f"model_type must be 'encoder' or 'decoder', got {config.model_type_detected}")
 
     def forward(
         self,
@@ -60,7 +107,7 @@ class RegressionModel(nn.Module):
         )
 
         # Extract hidden state based on model type
-        if self.model_type == "encoder":
+        if self.model_type_str == "encoder":
             # Use [CLS] token (first token)
             hidden = outputs.last_hidden_state[:, 0]
         else:
@@ -107,9 +154,20 @@ def load_model(config: TrainConfig) -> Tuple[RegressionModel, str]:
     model_type = detect_model_type(config.model_name)
     print(f"Detected model type: {model_type}")
 
-    # Load model config
-    model_config = AutoConfig.from_pretrained(config.model_name)
-    hidden_size = model_config.hidden_size
+    # Load backbone model config to get hidden size
+    backbone_config = AutoConfig.from_pretrained(config.model_name)
+    hidden_size = backbone_config.hidden_size
+
+    # Create RegressionModelConfig
+    regression_config = RegressionModelConfig(
+        base_model_name=config.model_name,
+        model_type_detected=model_type,
+        hidden_size=hidden_size,
+        use_lora=config.use_lora,
+        lora_r=config.lora_r,
+        lora_alpha=config.lora_alpha,
+        quantization_bits=config.quantization_bits,
+    )
 
     # Prepare quantization config if using LoRA
     quantization_config = None
@@ -149,7 +207,16 @@ def load_model(config: TrainConfig) -> Tuple[RegressionModel, str]:
         print(f"Applied LoRA with r={config.lora_r}, alpha={config.lora_alpha}")
         backbone.print_trainable_parameters()
 
-    # Wrap in regression model
-    model = RegressionModel(backbone, hidden_size, model_type)
+    # Wrap in regression model with config and backbone
+    model = RegressionModel(regression_config, backbone=backbone)
 
     return model, model_type
+
+
+# Register the model with AutoModel for easy loading
+try:
+    from transformers import AutoModel as HFAutoModel
+    HFAutoModel.register(RegressionModelConfig, RegressionModel)
+except Exception:
+    # Registration might fail in some contexts, that's okay
+    pass

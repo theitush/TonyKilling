@@ -141,6 +141,11 @@ class TrainConfig:
     save_strategy: str = "epoch"  # "epoch", "steps", or "no"
     eval_steps: int = 5  # Evaluate every N steps
 
+    # HuggingFace Hub integration
+    upload_to_hub: bool = True  # Whether to upload checkpoints to HuggingFace Hub
+    hf_username: Optional[str] = None  # HuggingFace username (auto-detected if not set)
+    hf_repo_prefix: str = "judge-tony"  # Prefix for repo names (e.g., "judge-tony-qwen")
+
     # Logging
     logging_steps: int = 1  # Log every step for visibility
 
