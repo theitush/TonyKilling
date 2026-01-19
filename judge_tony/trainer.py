@@ -82,8 +82,12 @@ class EpochCheckpointCallback(TrainerCallback):
             actuals: Array of actual scores
             title: Plot title
         """
-        plt.figure(figsize=(8, 8))
+        # normalize predictions to score range [-0.5, 1.5] for better visualization
+        predictions = np.array([max(-0.5, p) for p in predictions])
+        predictions = np.array([min(1.5, p) for p in predictions])
 
+        plt.figure(figsize=(8, 8))
+        
         # Create scatter plot
         sns.scatterplot(x=predictions, y=actuals, alpha=0.5)
 
