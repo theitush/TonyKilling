@@ -85,6 +85,13 @@ class EpochCheckpointCallback(TrainerCallback):
             'eval_runtime': metrics.get('eval_runtime'),
             'eval_samples_per_second': metrics.get('eval_samples_per_second'),
         }
+        # Track best checkpoint
+        current_loss = eval_results.get('eval_loss', float('inf'))
+        is_best = current_loss < self.best_eval_loss
+        if is_best:
+            self.best_eval_loss = current_loss
+            self.best_epoch = epoch
+            print(f"🏆 New best checkpoint! Loss: {current_loss:.4f}")
 
         # Save checkpoint locally
         checkpoint_path = save_checkpoint(
@@ -93,14 +100,6 @@ class EpochCheckpointCallback(TrainerCallback):
             epoch=epoch,
             checkpoint_dir=self.checkpoint_dir,
         )
-
-        # Track best checkpoint
-        current_loss = eval_results.get('eval_loss', float('inf'))
-        is_best = current_loss < self.best_eval_loss
-        if is_best:
-            self.best_eval_loss = current_loss
-            self.best_epoch = epoch
-            print(f"🏆 New best checkpoint! Loss: {current_loss:.4f}")
 
         # Upload to HuggingFace Hub
         if self.upload_to_hub and self.hf_repo_name and self.base_model_name:
