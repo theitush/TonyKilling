@@ -4,6 +4,9 @@ import torch
 from transformers import Trainer, TrainingArguments, TrainerCallback
 from typing import Dict, Optional
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
 
 
 class JudgeTonyTrainer(Trainer):
@@ -70,6 +73,49 @@ class EpochCheckpointCallback(TrainerCallback):
         self.best_eval_loss = float('inf')
         self.best_epoch = None
 
+    def _create_qq_plot(self, predictions: np.ndarray, actuals: np.ndarray, title: str):
+        """
+        Create a QQ plot comparing predictions vs actual scores
+
+        Args:
+            predictions: Array of predicted scores
+            actuals: Array of actual scores
+            title: Plot title
+        """
+        plt.figure(figsize=(8, 8))
+
+        # Create scatter plot
+        sns.scatterplot(x=predictions, y=actuals, alpha=0.5)
+
+        # Add diagonal reference line (perfect predictions)
+        min_val = min(predictions.min(), actuals.min())
+        max_val = max(predictions.max(), actuals.max())
+        plt.plot([min_val, max_val], [min_val, max_val], 'r--', label='Perfect prediction')
+
+        plt.xlabel('Predicted Score')
+        plt.ylabel('Actual Score')
+        plt.title(title)
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+
+    def _get_predictions(self, trainer, dataset):
+        """
+        Get predictions for a dataset
+
+        Args:
+            trainer: The Trainer instance
+            dataset: Dataset to get predictions for
+
+        Returns:
+            Tuple of (predictions, actuals)
+        """
+        predictions_output = trainer.predict(dataset)
+        predictions = predictions_output.predictions.squeeze()
+        actuals = predictions_output.label_ids.squeeze()
+        return predictions, actuals
+
     def on_evaluate(self, args, state, control, model=None, metrics=None, **kwargs):
         """Called after evaluation completes - this ensures we have current epoch's metrics"""
         from .colab_utils import save_checkpoint
@@ -82,9 +128,31 @@ class EpochCheckpointCallback(TrainerCallback):
 
         epoch = int(state.epoch)
 
-        # Get trainer instance to access loss function
+        # Get trainer instance to access loss function and datasets
         trainer = kwargs.get('trainer')
         loss_function = str(trainer.loss_fct) if trainer and hasattr(trainer, 'loss_fct') else None
+
+        # Generate QQ plots for train and validation sets
+        if trainer:
+            print(f"\n📊 Generating QQ plots for epoch {epoch}...")
+
+            # Get train dataset predictions
+            if hasattr(trainer, 'train_dataset') and trainer.train_dataset is not None:
+                train_preds, train_actuals = self._get_predictions(trainer, trainer.train_dataset)
+                self._create_qq_plot(
+                    train_preds,
+                    train_actuals,
+                    f'Epoch {epoch} - Training Set: Predictions vs Actual Scores'
+                )
+
+            # Get validation dataset predictions
+            if hasattr(trainer, 'eval_dataset') and trainer.eval_dataset is not None:
+                val_preds, val_actuals = self._get_predictions(trainer, trainer.eval_dataset)
+                self._create_qq_plot(
+                    val_preds,
+                    val_actuals,
+                    f'Epoch {epoch} - Validation Set: Predictions vs Actual Scores'
+                )
 
         # Build eval results from the metrics passed to this callback
         eval_results = {
