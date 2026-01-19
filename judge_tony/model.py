@@ -15,7 +15,7 @@ from .config import TrainConfig
 class RegressionOutput(ModelOutput):
     """Output class for regression models"""
     loss: Optional[torch.FloatTensor] = None
-    logits: torch.FloatTensor = None
+    predictions: torch.FloatTensor = None
 
 
 class RegressionModelConfig(PretrainedConfig):
@@ -98,7 +98,7 @@ class RegressionModel(PreTrainedModel):
             labels: Ground truth scores [batch_size] (optional)
 
         Returns:
-            dict with 'logits' (predictions) and optionally 'loss'
+            RegressionOutput with 'predictions' and optionally 'loss'
         """
         outputs = self.backbone(
             input_ids=input_ids,
@@ -114,16 +114,16 @@ class RegressionModel(PreTrainedModel):
             # Use last token
             hidden = outputs.last_hidden_state[:, -1]
 
-        # Regression head with sigmoid activation
-        logits = torch.sigmoid(self.head(hidden)).squeeze(-1)
+        # Regression head - outputs unbounded values
+        predictions = self.head(hidden).squeeze(-1)
 
         # Compute loss if labels provided
         loss = None
         if labels is not None:
             loss_fct = nn.MSELoss()
-            loss = loss_fct(logits, labels)
+            loss = loss_fct(predictions, labels)
 
-        return RegressionOutput(loss=loss, logits=logits)
+        return RegressionOutput(loss=loss, predictions=predictions)
 
 
 def detect_model_type(model_name: str) -> str:

@@ -18,7 +18,7 @@ def predict(model, tokenizer, texts: List[str], batch_size: int = 8, max_length:
         max_length: Maximum sequence length
 
     Returns:
-        Numpy array of predicted scores (0-1)
+        Numpy array of predicted scores (unbounded regression values)
     """
     model.eval()
     device = next(model.parameters()).device
@@ -43,7 +43,7 @@ def predict(model, tokenizer, texts: List[str], batch_size: int = 8, max_length:
 
             # Forward pass
             outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-            batch_preds = outputs.logits.cpu().numpy()
+            batch_preds = outputs.predictions.cpu().numpy()
 
             predictions.extend(batch_preds)
 

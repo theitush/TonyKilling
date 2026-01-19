@@ -34,14 +34,14 @@ class JudgeTonyTrainer(Trainer):
             attention_mask=inputs["attention_mask"],
         )
 
-        # Get predictions (already passed through sigmoid in model)
-        logits = outputs.logits
+        # Get predictions (unbounded regression values)
+        predictions = outputs.predictions
 
-        # Ensure labels match logits dtype for fp16 training
-        labels = labels.to(logits.dtype)
+        # Ensure labels match predictions dtype for fp16 training
+        labels = labels.to(predictions.dtype)
 
         # Compute MSE loss
-        loss = self.loss_fct(logits, labels)
+        loss = self.loss_fct(predictions, labels)
 
         return (loss, outputs) if return_outputs else loss
 

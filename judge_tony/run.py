@@ -134,44 +134,6 @@ def train(
     print(f"  MSE: {eval_results['mse']:.4f}")
     print(f"  MAE: {eval_results['mae']:.4f}")
     print("=" * 50)
-
-    # Save model and tokenizer
-    print(f"\nSaving final model to {config.output_dir}...")
-    model.save_pretrained(config.output_dir)
-    tokenizer.save_pretrained(config.output_dir)
-
-    # Upload final best model to HuggingFace Hub main branch
-    if config.upload_to_hub and hf_repo_name and checkpoint_callback.best_epoch is not None:
-        from .hub_utils import upload_checkpoint_to_hub
-        import json
-        import os
-
-        print(f"\nUploading best model (epoch {checkpoint_callback.best_epoch}) to HuggingFace Hub...")
-
-        # Create eval results for final upload
-        final_eval_results = {
-            'test_mse': eval_results['mse'],
-            'test_mae': eval_results['mae'],
-            'best_epoch': checkpoint_callback.best_epoch,
-            'best_eval_loss': checkpoint_callback.best_eval_loss,
-        }
-
-        # Save final results
-        final_results_path = os.path.join(config.output_dir, "eval_results.json")
-        with open(final_results_path, 'w') as f:
-            json.dump(final_eval_results, f, indent=2)
-
-        # Upload to main branch
-        upload_checkpoint_to_hub(
-            checkpoint_dir=config.output_dir,
-            repo_name=hf_repo_name,
-            epoch=checkpoint_callback.best_epoch,
-            eval_results=final_eval_results,
-            base_model_name=config.model_name,
-            is_best=True,  # This will upload to main branch
-            commit_message=f"Final best model from epoch {checkpoint_callback.best_epoch}",
-        )
-
     print("\nTraining complete!")
 
     return model, tokenizer, eval_results
