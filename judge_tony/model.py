@@ -217,6 +217,7 @@ def load_model(config: TrainConfig) -> Tuple[RegressionModel, str]:
 try:
     from transformers import AutoModel as HFAutoModel
     HFAutoModel.register(RegressionModelConfig, RegressionModel)
-except Exception:
+    print("✓ Registered RegressionModel with AutoModel")
+except Exception as e:
     # Registration might fail in some contexts, that's okay
-    pass
+    print(f"Note: Could not register with AutoModel ({e}). Use RegressionModel.from_pretrained() instead.")
