@@ -242,7 +242,7 @@ def create_training_args(config) -> TrainingArguments:
         save_strategy=config.save_strategy,
         save_steps=config.eval_steps if config.save_strategy == "steps" else None,
         save_total_limit=3,
-        load_best_model_at_end=True,
+        load_best_model_at_end=False,
         metric_for_best_model="eval_loss",
         # Performance
         fp16=config.fp16,
