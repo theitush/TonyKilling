@@ -126,3 +126,41 @@ def load_latest_checkpoint(checkpoint_dir: str) -> Optional[str]:
 
     print("No checkpoints found")
     return None
+
+
+def cleanup_old_epoch_checkpoints(checkpoint_dir: str, keep_last_n: int):
+    """
+    Delete old epoch checkpoints, keeping only the N most recent.
+
+    This helps manage disk space during training by removing old checkpoints
+    after they've been uploaded to HuggingFace Hub.
+
+    Args:
+        checkpoint_dir: Local checkpoint directory
+        keep_last_n: Number of most recent checkpoints to keep
+    """
+    import shutil
+
+    if not os.path.exists(checkpoint_dir):
+        return
+
+    # Find all epoch_* directories
+    epoch_dirs = [d for d in os.listdir(checkpoint_dir) if d.startswith("epoch_")]
+
+    if len(epoch_dirs) <= keep_last_n:
+        # Nothing to clean up
+        return
+
+    # Sort by epoch number
+    epoch_dirs.sort(key=lambda x: int(x.split("_")[1]))
+
+    # Delete all except the last N
+    dirs_to_delete = epoch_dirs[:-keep_last_n]
+
+    for dir_name in dirs_to_delete:
+        dir_path = os.path.join(checkpoint_dir, dir_name)
+        print(f"🗑️  Deleting old checkpoint: {dir_name}")
+        shutil.rmtree(dir_path)
+
+    if dirs_to_delete:
+        print(f"✓ Cleaned up {len(dirs_to_delete)} old checkpoint(s), kept {keep_last_n} most recent")

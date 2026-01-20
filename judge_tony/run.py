@@ -97,6 +97,7 @@ def train(
         hf_repo_name=hf_repo_name,
         base_model_name=config.model_name,
         upload_to_hub=config.upload_to_hub,
+        keep_last_n_epochs=config.keep_last_n_epochs,
     )
 
     # Create trainer

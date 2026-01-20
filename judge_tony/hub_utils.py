@@ -168,19 +168,15 @@ def upload_checkpoint_to_hub(
     epoch: int,
     eval_results: Dict,
     base_model_name: str,
-    is_best: bool = False,
     commit_message: Optional[str] = None,
 ) -> bool:
     """
     Upload checkpoint to HuggingFace Hub with branch-based versioning
 
     Each epoch is uploaded to its own branch (epoch-1, epoch-2, etc.) to preserve
-    all checkpoint versions. The main branch is updated only with the best checkpoint.
+    all checkpoint versions.
 
-    Usage examples:
-        # Load latest/best checkpoint (from main branch)
-        model = AutoModel.from_pretrained("username/judge-tony-qwen")
-
+    Usage example:
         # Load specific epoch checkpoint
         model = AutoModel.from_pretrained("username/judge-tony-qwen", revision="epoch-3")
 
@@ -190,7 +186,6 @@ def upload_checkpoint_to_hub(
         epoch: Epoch number
         eval_results: Evaluation results dictionary
         base_model_name: Base model name
-        is_best: Whether this is the best checkpoint (will also update main branch)
         commit_message: Custom commit message (optional)
 
     Returns:
@@ -228,8 +223,6 @@ def upload_checkpoint_to_hub(
         if commit_message is None:
             eval_loss = eval_results.get("eval_loss", "N/A")
             commit_message = f"Upload epoch {epoch} checkpoint (eval_loss: {eval_loss})"
-            if is_best:
-                commit_message = f"✨ Best checkpoint - " + commit_message
 
         # Upload to epoch-specific branch to preserve all checkpoints
         epoch_branch = f"epoch-{epoch}"
@@ -257,23 +250,6 @@ def upload_checkpoint_to_hub(
         )
 
         print(f"✓ Uploaded to https://huggingface.co/{repo_name}/tree/{epoch_branch}")
-
-        # Also upload to main branch if this is the best checkpoint
-        if is_best:
-            print(f"⬆️  Updating main branch with best checkpoint...")
-            try:
-                api.upload_folder(
-                    folder_path=checkpoint_dir,
-                    repo_id=repo_name,
-                    repo_type="model",
-                    revision="main",
-                    commit_message=commit_message,
-                    create_pr=False,
-                    allow_patterns=["config.json", "model.safetensors", "generation_config.json", "README.md", "eval_results.json"],
-                )
-                print(f"✓ Updated main branch: https://huggingface.co/{repo_name}")
-            except Exception as e:
-                print(f"Note: Could not update main branch: {e}")
 
         return True
 
@@ -330,5 +306,4 @@ def upload_existing_checkpoint(
         epoch=epoch,
         eval_results=eval_results,
         base_model_name=base_model_name,
-        is_best=False,
     )

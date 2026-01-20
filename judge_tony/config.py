@@ -138,8 +138,9 @@ class TrainConfig:
 
     # Checkpointing and evaluation
     output_dir: str = "./judge_tony"
-    save_strategy: str = "epoch"  # "epoch", "steps", or "no"
+    save_strategy: str = "no"  # "epoch", "steps", or "no" - using custom checkpoint callback instead
     eval_steps: int = 5  # Evaluate every N steps
+    keep_last_n_epochs: int = 1  # Keep only N most recent epoch checkpoints locally (saves disk space)
 
     # HuggingFace Hub integration
     upload_to_hub: bool = True  # Whether to upload checkpoints to HuggingFace Hub
