@@ -30,12 +30,41 @@ def train(
         - tokenizer: HuggingFace tokenizer
         - eval_results: Dict with test set metrics (mse, mae)
     """
-    from .hub_utils import setup_hf_auth, get_repo_name
+    from .hub_utils import setup_hf_auth, get_repo_name, get_latest_epoch_branch, extract_base_model_from_repo
 
     print("=" * 50)
     print("Judge Tony Training Pipeline")
     print("=" * 50)
-    print(f"Model: {config.model_name}")
+
+    # Check for auto-resume
+    starting_epoch = 0
+    resume_checkpoint_path = None
+    base_model_for_card = config.model_name
+
+    if config.resume_from_checkpoint:
+        print(f"\n🔄 Resume mode detected: {config.resume_from_checkpoint}")
+
+        # Get latest epoch from HuggingFace Hub
+        latest_epoch_info = get_latest_epoch_branch(config.resume_from_checkpoint)
+
+        if latest_epoch_info:
+            branch_name, epoch_num = latest_epoch_info
+            starting_epoch = epoch_num
+            resume_checkpoint_path = config.resume_from_checkpoint
+            print(f"✓ Found checkpoint at {branch_name} (epoch {epoch_num})")
+            print(f"📥 Will resume from epoch {epoch_num}, continuing to epoch {config.epochs}")
+
+            # Extract base model for model card generation
+            base_model_extracted = extract_base_model_from_repo(config.resume_from_checkpoint)
+            if base_model_extracted:
+                base_model_for_card = base_model_extracted
+                print(f"✓ Base model: {base_model_for_card}")
+        else:
+            print(f"⚠️  No checkpoints found in {config.resume_from_checkpoint}")
+            print("Starting new training instead...")
+            config.resume_from_checkpoint = None
+
+    print(f"\nModel: {config.model_name}")
     print(f"Train size: {len(train_df)}")
     print(f"Test size: {len(test_df)}")
     print(f"Max length: {config.max_length}")
@@ -44,6 +73,8 @@ def train(
     print(f"Epochs: {config.epochs}")
     print(f"LoRA: {config.use_lora}")
     print(f"Upload to Hub: {config.upload_to_hub}")
+    if starting_epoch > 0:
+        print(f"Starting epoch: {starting_epoch + 1}")
     print("=" * 50)
 
     # Setup HuggingFace authentication
@@ -69,9 +100,16 @@ def train(
             config.upload_to_hub = False
         print("=" * 50)
 
-    # Load tokenizer
+    # Load tokenizer (from checkpoint if resuming, otherwise from base model)
     print("\nLoading tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(config.model_name, trust_remote_code=True)
+    tokenizer_source = config.model_name
+    if config.resume_from_checkpoint and starting_epoch > 0:
+        # Load tokenizer from checkpoint branch
+        from .model import RegressionModel
+        tokenizer_source = config.resume_from_checkpoint
+        print(f"Loading tokenizer from checkpoint: {tokenizer_source}")
+
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=True)
 
     # Add padding token if missing (common for decoder models)
     if tokenizer.pad_token is None:
@@ -85,7 +123,22 @@ def train(
 
     # Load model
     print("\nLoading model...")
-    model, model_type = load_model(config)
+    if config.resume_from_checkpoint and starting_epoch > 0:
+        # Resume from checkpoint
+        from .model import RegressionModel
+        branch_name = f"epoch-{starting_epoch}"
+        print(f"Loading model from {config.resume_from_checkpoint} (branch: {branch_name})")
+        model = RegressionModel.from_pretrained(
+            config.resume_from_checkpoint,
+            revision=branch_name,
+            trust_remote_code=True,
+        )
+        print(f"✓ Loaded checkpoint from epoch {starting_epoch}")
+        model_type = model.config.model_type_detected
+    else:
+        # Load fresh model
+        model, model_type = load_model(config)
+
     print(f"Model type: {model_type}")
 
     # Create training arguments
@@ -95,9 +148,11 @@ def train(
     checkpoint_callback = EpochCheckpointCallback(
         checkpoint_dir=config.output_dir,
         hf_repo_name=hf_repo_name,
-        base_model_name=config.model_name,
+        base_model_name=base_model_for_card,
         upload_to_hub=config.upload_to_hub,
         keep_last_n_epochs=config.keep_last_n_epochs,
+        starting_epoch=starting_epoch,
+        train_config=config,
     )
 
     # Create trainer

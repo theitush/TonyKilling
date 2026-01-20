@@ -146,6 +146,7 @@ class TrainConfig:
     upload_to_hub: bool = True  # Whether to upload checkpoints to HuggingFace Hub
     hf_username: Optional[str] = None  # HuggingFace username (auto-detected if not set)
     hf_repo_prefix: str = "judge-tony"  # Prefix for repo names (e.g., "judge-tony-qwen")
+    resume_from_checkpoint: Optional[str] = None  # Checkpoint to resume from (set automatically for checkpoint repos)
 
     # Logging
     logging_steps: int = 1  # Log every step for visibility
@@ -173,24 +174,58 @@ class TrainConfig:
     def from_model(cls, model_name: str, **overrides) -> "TrainConfig":
         """Create a TrainConfig from a model name using predefined configs.
 
+        Supports both base models and checkpoint repositories:
+        - Base model: "Qwen/Qwen3-4B" (standard training)
+        - Checkpoint: "itacas/judge-tony-qwen3-4b" (auto-resume)
+
         Args:
-            model_name: Name of the model (must be in MODEL_CONFIGS)
+            model_name: Name of the model or checkpoint repo
             **overrides: Additional parameters to override defaults
 
         Returns:
             TrainConfig instance with model-specific settings
 
-        Example:
+        Examples:
+            # Standard training
             config = TrainConfig.from_model("Qwen/Qwen3-4B", epochs=10)
-        """
-        if model_name not in MODEL_CONFIGS:
-            raise ValueError(
-                f"No predefined config for {model_name}. "
-                f"Available models: {list(MODEL_CONFIGS.keys())}"
-            )
 
-        # Start with model-specific config
-        config_dict = {"model_name": model_name, **MODEL_CONFIGS[model_name]}
+            # Auto-resume from checkpoint
+            config = TrainConfig.from_model("itacas/judge-tony-qwen3-4b", num_train_epochs=8)
+        """
+        # Check if this is a checkpoint repo (contains username and judge-tony prefix)
+        is_checkpoint_repo = "/" in model_name and "judge-tony" in model_name.lower()
+
+        if is_checkpoint_repo:
+            # Try to extract base model from checkpoint repo name
+            from .hub_utils import extract_base_model_from_repo
+
+            base_model_name = extract_base_model_from_repo(model_name)
+
+            if base_model_name is None:
+                raise ValueError(
+                    f"Could not determine base model from checkpoint repo: {model_name}. "
+                    f"Available base models: {list(MODEL_CONFIGS.keys())}"
+                )
+
+            print(f"📦 Detected checkpoint repo: {model_name}")
+            print(f"🔍 Extracted base model: {base_model_name}")
+
+            # Start with base model config
+            config_dict = {"model_name": model_name, **MODEL_CONFIGS[base_model_name]}
+
+            # Mark for auto-resume
+            config_dict["resume_from_checkpoint"] = model_name
+
+        else:
+            # Standard base model
+            if model_name not in MODEL_CONFIGS:
+                raise ValueError(
+                    f"No predefined config for {model_name}. "
+                    f"Available models: {list(MODEL_CONFIGS.keys())}"
+                )
+
+            # Start with model-specific config
+            config_dict = {"model_name": model_name, **MODEL_CONFIGS[model_name]}
 
         # Apply any overrides
         config_dict.update(overrides)

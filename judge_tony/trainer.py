@@ -60,6 +60,8 @@ class EpochCheckpointCallback(TrainerCallback):
         upload_to_hub: bool = True,
         trainer: Optional['JudgeTonyTrainer'] = None,
         keep_last_n_epochs: int = 1,
+        starting_epoch: int = 0,
+        train_config: Optional[object] = None,
     ):
         """
         Args:
@@ -69,6 +71,8 @@ class EpochCheckpointCallback(TrainerCallback):
             upload_to_hub: Whether to upload to HuggingFace Hub
             trainer: Reference to the trainer instance (for accessing loss function)
             keep_last_n_epochs: Number of most recent epoch checkpoints to keep locally
+            starting_epoch: Epoch number to start from (for resumed training)
+            train_config: TrainConfig instance to save with checkpoints
         """
         self.checkpoint_dir = checkpoint_dir
         self.hf_repo_name = hf_repo_name
@@ -76,6 +80,8 @@ class EpochCheckpointCallback(TrainerCallback):
         self.upload_to_hub = upload_to_hub
         self.trainer = trainer
         self.keep_last_n_epochs = keep_last_n_epochs
+        self.starting_epoch = starting_epoch
+        self.train_config = train_config
 
     def _create_qq_plots(self, train_preds: np.ndarray, train_actuals: np.ndarray,
                         val_preds: np.ndarray, val_actuals: np.ndarray, epoch: int):
@@ -135,14 +141,15 @@ class EpochCheckpointCallback(TrainerCallback):
     def on_evaluate(self, args, state, control, model=None, metrics=None, **kwargs):
         """Called after evaluation completes - this ensures we have current epoch's metrics"""
         from .colab_utils import save_checkpoint
-        from .hub_utils import upload_checkpoint_to_hub
+        from .hub_utils import upload_checkpoint_to_hub, save_training_config
 
         # Only save/upload at epoch boundaries (when eval_strategy="epoch")
         # state.epoch is the current epoch (e.g., 1.0, 2.0, 3.0)
         if not state.epoch.is_integer():
             return
 
-        epoch = int(state.epoch)
+        # Calculate actual epoch number (accounting for resumed training)
+        epoch = int(state.epoch) + self.starting_epoch
 
         # Get loss function from stored trainer reference
         loss_function = str(self.trainer.loss_fct) if self.trainer and hasattr(self.trainer, 'loss_fct') else None
@@ -193,6 +200,10 @@ class EpochCheckpointCallback(TrainerCallback):
             epoch=epoch,
             checkpoint_dir=self.checkpoint_dir,
         )
+
+        # Save training config to checkpoint
+        if self.train_config is not None:
+            save_training_config(self.train_config, checkpoint_path)
 
         # Upload to HuggingFace Hub
         if self.upload_to_hub and self.hf_repo_name and self.base_model_name:

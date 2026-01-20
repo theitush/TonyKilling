@@ -5,7 +5,7 @@ import json
 from typing import Dict, Optional
 from pathlib import Path
 
-from huggingface_hub import HfApi, login, whoami, create_repo, upload_folder
+from huggingface_hub import HfApi, login, whoami, create_repo, upload_folder, hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
 
 
@@ -62,6 +62,100 @@ def get_repo_name(base_model_name: str, hf_username: str, repo_prefix: str = "ju
 
     repo_name = f"{hf_username}/{repo_prefix}-{model_name}"
     return repo_name
+
+
+def extract_base_model_from_repo(repo_name: str, repo_prefix: str = "judge-tony") -> Optional[str]:
+    """
+    Extract base model name from checkpoint repository name
+
+    Args:
+        repo_name: Checkpoint repo name (e.g., "itacas/judge-tony-qwen3-4b")
+        repo_prefix: Prefix used in repo names
+
+    Returns:
+        Base model name if found (e.g., "Qwen/Qwen3-4B"), None otherwise
+    """
+    from .config import MODEL_CONFIGS
+
+    # Extract the model part from repo name
+    # "itacas/judge-tony-qwen3-4b" -> "qwen3-4b"
+    if "/" in repo_name:
+        repo_name = repo_name.split("/")[-1]
+
+    if not repo_name.startswith(repo_prefix):
+        return None
+
+    # Remove prefix: "judge-tony-qwen3-4b" -> "qwen3-4b"
+    model_part = repo_name[len(repo_prefix):].lstrip("-")
+
+    # Try to match against MODEL_CONFIGS keys
+    for base_model_name in MODEL_CONFIGS.keys():
+        # Extract model name from base model path
+        # "Qwen/Qwen3-4B" -> "qwen3-4b"
+        base_model_short = base_model_name.split("/")[-1].lower()
+
+        if base_model_short == model_part:
+            return base_model_name
+
+    return None
+
+
+def get_latest_epoch_branch(repo_id: str) -> Optional[tuple]:
+    """
+    Query HuggingFace Hub to find the latest epoch branch
+
+    Args:
+        repo_id: Repository ID (e.g., "itacas/judge-tony-qwen3-4b")
+
+    Returns:
+        Tuple of (branch_name, epoch_number) if found, None otherwise
+        Example: ("epoch-5", 5)
+    """
+    try:
+        api = HfApi()
+        refs = api.list_repo_refs(repo_id, repo_type="model")
+
+        # Find all epoch branches
+        epoch_branches = []
+        for branch in refs.branches:
+            if branch.name.startswith("epoch-"):
+                try:
+                    epoch_num = int(branch.name.split("-")[1])
+                    epoch_branches.append((branch.name, epoch_num))
+                except (ValueError, IndexError):
+                    continue
+
+        if not epoch_branches:
+            return None
+
+        # Return the branch with highest epoch number
+        return max(epoch_branches, key=lambda x: x[1])
+
+    except Exception as e:
+        print(f"Could not query repository {repo_id}: {e}")
+        return None
+
+
+def save_training_config(config, checkpoint_dir: str):
+    """
+    Save TrainConfig to checkpoint directory as JSON
+
+    Args:
+        config: TrainConfig instance
+        checkpoint_dir: Directory to save config to
+    """
+    from dataclasses import asdict
+
+    config_path = os.path.join(checkpoint_dir, "training_config.json")
+
+    # Convert config to dict
+    config_dict = asdict(config)
+
+    # Save as JSON
+    with open(config_path, "w") as f:
+        json.dump(config_dict, f, indent=2)
+
+    print(f"✓ Saved training config to {config_path}")
 
 
 def create_model_card(
@@ -246,7 +340,7 @@ def upload_checkpoint_to_hub(
             revision=epoch_branch,
             commit_message=commit_message,
             create_pr=False,
-            allow_patterns=["config.json", "model.safetensors", "generation_config.json", "README.md", "eval_results.json"],
+            allow_patterns=["config.json", "model.safetensors", "generation_config.json", "README.md", "eval_results.json", "training_config.json"],
         )
 
         print(f"✓ Uploaded to https://huggingface.co/{repo_name}/tree/{epoch_branch}")
