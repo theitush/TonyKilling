@@ -70,18 +70,65 @@ class RegressionModel(PreTrainedModel):
         self.config = config
 
         # If backbone is provided, use it (for backward compatibility)
-        # Otherwise, we expect it to be loaded from pretrained
+        # Otherwise, load it from the base model
         if backbone is not None:
             self.backbone = backbone
         else:
-            # This will be set when loading from pretrained
-            self.backbone = None
+            # Load backbone from config when resuming from checkpoint
+            self.backbone = self._load_backbone_from_config(config)
 
         self.head = nn.Linear(config.hidden_size, 1)
         self.model_type_str = config.model_type_detected
 
         if config.model_type_detected not in ["encoder", "decoder"]:
             raise ValueError(f"model_type must be 'encoder' or 'decoder', got {config.model_type_detected}")
+
+    def _load_backbone_from_config(self, config: RegressionModelConfig) -> nn.Module:
+        """
+        Load the backbone model from the configuration.
+        Used when resuming from checkpoint.
+
+        Args:
+            config: RegressionModelConfig with model settings
+
+        Returns:
+            Loaded backbone model
+        """
+        # Prepare quantization config if using LoRA
+        quantization_config = None
+        if config.use_lora:
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+
+        # Load backbone
+        backbone = AutoModel.from_pretrained(
+            config.base_model_name,
+            quantization_config=quantization_config,
+            device_map=None,
+            trust_remote_code=True,
+        )
+
+        # Enable gradient checkpointing for memory efficiency
+        if hasattr(backbone, 'gradient_checkpointing_enable'):
+            backbone.gradient_checkpointing_enable()
+
+        # Apply LoRA if enabled
+        if config.use_lora:
+            lora_config = LoraConfig(
+                r=config.lora_r,
+                lora_alpha=config.lora_alpha,
+                target_modules=["q_proj", "v_proj"],
+                lora_dropout=0.05,
+                bias="none",
+                task_type="FEATURE_EXTRACTION",
+            )
+            backbone = get_peft_model(backbone, lora_config)
+
+        return backbone
 
     def forward(
         self,
