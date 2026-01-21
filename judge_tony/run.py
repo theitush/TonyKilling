@@ -38,7 +38,6 @@ def train(
 
     # Check for auto-resume
     starting_epoch = 0
-    resume_checkpoint_path = None
     base_model_for_card = config.model_name
 
     if config.resume_from_checkpoint:
@@ -50,7 +49,6 @@ def train(
         if latest_epoch_info:
             branch_name, epoch_num = latest_epoch_info
             starting_epoch = epoch_num
-            resume_checkpoint_path = config.resume_from_checkpoint
             print(f"✓ Found checkpoint at {branch_name} (epoch {epoch_num})")
             print(f"📥 Will resume from epoch {epoch_num}, continuing to epoch {config.epochs}")
 
@@ -100,14 +98,11 @@ def train(
             config.upload_to_hub = False
         print("=" * 50)
 
-    # Load tokenizer (from checkpoint if resuming, otherwise from base model)
+    # Load tokenizer (always from base model, even when resuming)
     print("\nLoading tokenizer...")
-    tokenizer_source = config.model_name
+    tokenizer_source = base_model_for_card if (config.resume_from_checkpoint and starting_epoch > 0) else config.model_name
     if config.resume_from_checkpoint and starting_epoch > 0:
-        # Load tokenizer from checkpoint branch
-        from .model import RegressionModel
-        tokenizer_source = config.resume_from_checkpoint
-        print(f"Loading tokenizer from checkpoint: {tokenizer_source}")
+        print(f"Loading tokenizer from base model: {tokenizer_source}")
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=True)
 
