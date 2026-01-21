@@ -69,13 +69,25 @@ class RegressionModel(PreTrainedModel):
         super().__init__(config)
         self.config = config
 
-        # If backbone is provided, use it (for backward compatibility)
-        # Otherwise, load it from the base model
+        # If backbone is provided, use it (for initial training)
+        # When loading from checkpoint via from_pretrained(), backbone is None
+        # and we need to initialize an empty backbone structure that will be
+        # populated by the state_dict loader
         if backbone is not None:
             self.backbone = backbone
         else:
-            # Load backbone from config when resuming from checkpoint
-            self.backbone = self._load_backbone_from_config(config)
+            # Initialize empty backbone from config for checkpoint loading
+            # from_pretrained() will populate it with saved weights
+            backbone_config = AutoConfig.from_pretrained(
+                config.base_model_name,
+                trust_remote_code=True,
+            )
+            # Initialize model structure without loading pretrained weights
+            # The weights will come from the checkpoint state_dict
+            self.backbone = AutoModel.from_config(
+                backbone_config,
+                trust_remote_code=True,
+            )
 
         self.head = nn.Linear(config.hidden_size, 1)
         self.model_type_str = config.model_type_detected
