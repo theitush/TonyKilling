@@ -88,12 +88,21 @@ def save_checkpoint(
         epoch: Current epoch number
         checkpoint_dir: Local checkpoint directory
     """
+    from peft import PeftModel
+
     # Create local checkpoint dir
     local_ckpt_path = f"{checkpoint_dir}/epoch_{epoch}"
     os.makedirs(local_ckpt_path, exist_ok=True)
 
     # Save model
     print(f"\nSaving checkpoint for epoch {epoch}...")
+
+    # Check if the backbone is a PEFT model and save adapters separately
+    if isinstance(model.backbone, PeftModel):
+        print("  Saving LoRA adapter weights...")
+        model.backbone.save_pretrained(local_ckpt_path)
+
+    # Save the full model (RegressionModel config + all weights)
     model.save_pretrained(local_ckpt_path)
 
     # Save eval results
@@ -101,7 +110,7 @@ def save_checkpoint(
     with open(results_path, 'w') as f:
         json.dump(eval_results, f, indent=2)
 
-    print(f"✓ Saved locally to {local_ckpt_path}")
+    print(f"✓ Saved checkpoint to {local_ckpt_path}")
 
     return local_ckpt_path
 

@@ -153,23 +153,44 @@ def train(
             trust_remote_code=True,
         )
 
-        # Load PEFT adapters from checkpoint
+        # Try to load PEFT adapters from checkpoint (new format)
+        # If adapter files don't exist (old format), we'll load the full weights instead
+        adapter_loaded = False
         if regression_config.use_lora:
-            print("Loading LoRA adapters from checkpoint...")
-            backbone = PeftModel.from_pretrained(
-                backbone,
-                config.resume_from_checkpoint,
-                revision=branch_name,
-            )
+            try:
+                print("Attempting to load LoRA adapters from checkpoint...")
+                from huggingface_hub import file_exists
+
+                # Check if adapter files exist
+                has_adapter_config = file_exists(
+                    repo_id=config.resume_from_checkpoint,
+                    filename="adapter_config.json",
+                    revision=branch_name,
+                )
+
+                if has_adapter_config:
+                    backbone = PeftModel.from_pretrained(
+                        backbone,
+                        config.resume_from_checkpoint,
+                        revision=branch_name,
+                    )
+                    adapter_loaded = True
+                    print("✓ Loaded LoRA adapters from checkpoint")
+                else:
+                    print("⚠️  No adapter files found (old checkpoint format)")
+                    print("   Will load full merged weights instead...")
+            except Exception as e:
+                print(f"⚠️  Could not load LoRA adapters: {e}")
+                print("   Will load full merged weights instead...")
 
         # Create RegressionModel with the loaded backbone
         model = RegressionModel(regression_config, backbone=backbone)
 
-        # Load the head weights from checkpoint
+        # Load weights from checkpoint
         import os
         from huggingface_hub import hf_hub_download
 
-        # Download model.safetensors or pytorch_model.bin to get head weights
+        # Download model.safetensors or pytorch_model.bin
         try:
             # Try safetensors first
             weights_file = hf_hub_download(
@@ -188,9 +209,16 @@ def train(
             )
             state_dict = torch.load(weights_file, map_location='cpu')
 
-        # Load only the head weights
-        head_weights = {k.replace('head.', ''): v for k, v in state_dict.items() if k.startswith('head.')}
-        model.head.load_state_dict(head_weights, strict=False)
+        if adapter_loaded:
+            # New format: only load head weights
+            print("Loading head weights from checkpoint...")
+            head_weights = {k.replace('head.', ''): v for k, v in state_dict.items() if k.startswith('head.')}
+            model.head.load_state_dict(head_weights, strict=False)
+        else:
+            # Old format: load full model weights (backbone + head)
+            print("Loading full model weights from checkpoint...")
+            # Filter out keys that don't match (e.g., due to architecture changes)
+            model.load_state_dict(state_dict, strict=False)
 
         print(f"✓ Loaded checkpoint from epoch {starting_epoch}")
         model_type = regression_config.model_type_detected
