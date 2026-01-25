@@ -1,7 +1,7 @@
 """Main entrypoint for training Judge Tony models"""
 
 import pandas as pd
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModel
 from typing import Tuple, Dict
 
 from .config import TrainConfig
@@ -119,17 +119,81 @@ def train(
     # Load model
     print("\nLoading model...")
     if config.resume_from_checkpoint and starting_epoch > 0:
-        # Resume from checkpoint
-        from .model import RegressionModel
+        # Resume from checkpoint - use special loading for PEFT models
+        from .model import RegressionModel, RegressionModelConfig
+        from peft import PeftModel
+        import torch
+
         branch_name = f"epoch-{starting_epoch}"
         print(f"Loading model from {config.resume_from_checkpoint} (branch: {branch_name})")
-        model = RegressionModel.from_pretrained(
+
+        # First, load the RegressionModelConfig from the checkpoint
+        regression_config = RegressionModelConfig.from_pretrained(
             config.resume_from_checkpoint,
             revision=branch_name,
             trust_remote_code=True,
         )
+
+        # Now load the base model with quantization
+        quantization_config = None
+        if regression_config.use_lora:
+            from transformers import BitsAndBytesConfig
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+
+        print(f"Loading base model: {regression_config.base_model_name}")
+        backbone = AutoModel.from_pretrained(
+            regression_config.base_model_name,
+            quantization_config=quantization_config,
+            device_map=None,
+            trust_remote_code=True,
+        )
+
+        # Load PEFT adapters from checkpoint
+        if regression_config.use_lora:
+            print("Loading LoRA adapters from checkpoint...")
+            backbone = PeftModel.from_pretrained(
+                backbone,
+                config.resume_from_checkpoint,
+                revision=branch_name,
+            )
+
+        # Create RegressionModel with the loaded backbone
+        model = RegressionModel(regression_config, backbone=backbone)
+
+        # Load the head weights from checkpoint
+        import os
+        from huggingface_hub import hf_hub_download
+
+        # Download model.safetensors or pytorch_model.bin to get head weights
+        try:
+            # Try safetensors first
+            weights_file = hf_hub_download(
+                repo_id=config.resume_from_checkpoint,
+                filename="model.safetensors",
+                revision=branch_name,
+            )
+            from safetensors.torch import load_file
+            state_dict = load_file(weights_file)
+        except:
+            # Fall back to pytorch_model.bin
+            weights_file = hf_hub_download(
+                repo_id=config.resume_from_checkpoint,
+                filename="pytorch_model.bin",
+                revision=branch_name,
+            )
+            state_dict = torch.load(weights_file, map_location='cpu')
+
+        # Load only the head weights
+        head_weights = {k.replace('head.', ''): v for k, v in state_dict.items() if k.startswith('head.')}
+        model.head.load_state_dict(head_weights, strict=False)
+
         print(f"✓ Loaded checkpoint from epoch {starting_epoch}")
-        model_type = model.config.model_type_detected
+        model_type = regression_config.model_type_detected
     else:
         # Load fresh model
         model, model_type = load_model(config)
