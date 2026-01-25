@@ -8,6 +8,8 @@ from pathlib import Path
 from huggingface_hub import HfApi, login, whoami, create_repo, upload_folder, hf_hub_download
 from huggingface_hub.utils import HfHubHTTPError
 
+from .constants import EPOCH_BRANCH_FORMAT
+
 
 def setup_hf_auth(token: Optional[str] = None) -> Optional[str]:
     """
@@ -115,11 +117,12 @@ def get_latest_epoch_branch(repo_id: str) -> Optional[tuple]:
         api = HfApi()
         refs = api.list_repo_refs(repo_id, repo_type="model")
 
-        # Find all epoch branches
+        # Find all epoch branches (using EPOCH_BRANCH_FORMAT pattern)
         epoch_branches = []
         for branch in refs.branches:
             if branch.name.startswith("epoch-"):
                 try:
+                    # Extract epoch number from branch name
                     epoch_num = int(branch.name.split("-")[1])
                     epoch_branches.append((branch.name, epoch_num))
                 except (ValueError, IndexError):
@@ -319,7 +322,7 @@ def upload_checkpoint_to_hub(
             commit_message = f"Upload epoch {epoch} checkpoint (eval_loss: {eval_loss})"
 
         # Upload to epoch-specific branch to preserve all checkpoints
-        epoch_branch = f"epoch-{epoch}"
+        epoch_branch = EPOCH_BRANCH_FORMAT.format(epoch=epoch)
         print(f"⬆️  Uploading checkpoint to {repo_name} (branch: {epoch_branch})...")
 
         # Create branch from main if it doesn't exist
